@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/vibe-gaming/esia-mock/internal/logger"
+	"github.com/vibe-gaming/esia-mock/internal/storage"
 	"go.uber.org/zap"
 )
 
@@ -18,6 +19,7 @@ type Handler struct {
 	codes        map[string]*AuthCode
 	tokens       map[string]*Token
 	userSessions map[string]string // code -> phone number
+	userCache    *storage.Cache    // кеш с моковыми данными пользователей
 	mu           sync.RWMutex
 }
 
@@ -74,6 +76,7 @@ func New() *Handler {
 		codes:        make(map[string]*AuthCode),
 		tokens:       make(map[string]*Token),
 		userSessions: make(map[string]string),
+		userCache:    storage.New(),
 	}
 }
 
@@ -476,25 +479,31 @@ func (h *Handler) UserInfo(w http.ResponseWriter, r *http.Request) {
 		phoneNumber = "+79991234567" // дефолтный номер если не задан
 	}
 
+	// Получаем или создаем уникальные моковые данные для этого телефона
+	userData := h.userCache.GetOrCreate(phoneNumber)
+
 	// Возвращаем мок данные пользователя
 	userInfo := UserInfo{
-		OID:         "1000000001",
-		FirstName:   "Иван",
-		LastName:    "Иванов",
-		MiddleName:  "Иванович",
-		BirthDate:   "01.01.1990",
-		Gender:      "M",
-		SNILS:       "12345678901",
-		INN:         "123456789012",
-		Email:       "ivanov@example.com",
-		Mobile:      phoneNumber,
-		Trusted:     true,
-		Verified:    true,
-		Citizenship: "RUS",
-		Status:      "REGISTERED",
+		OID:         userData.OID,
+		FirstName:   userData.FirstName,
+		LastName:    userData.LastName,
+		MiddleName:  userData.MiddleName,
+		BirthDate:   userData.BirthDate,
+		Gender:      userData.Gender,
+		SNILS:       userData.SNILS,
+		INN:         userData.INN,
+		Email:       userData.Email,
+		Mobile:      userData.Mobile,
+		Trusted:     userData.Trusted,
+		Verified:    userData.Verified,
+		Citizenship: userData.Citizenship,
+		Status:      userData.Status,
 	}
 
-	logger.Info("UserInfo response", zap.String("oid", userInfo.OID))
+	logger.Info("UserInfo response",
+		zap.String("oid", userInfo.OID),
+		zap.String("phone", phoneNumber),
+		zap.Int("cached_users", h.userCache.Count()))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(userInfo)
@@ -531,24 +540,39 @@ func (h *Handler) GetPerson(w http.ResponseWriter, r *http.Request) {
 	pathParts := strings.Split(r.URL.Path, "/")
 	oid := pathParts[len(pathParts)-1]
 
-	userInfo := UserInfo{
-		OID:         oid,
-		FirstName:   "Иван",
-		LastName:    "Иванов",
-		MiddleName:  "Иванович",
-		BirthDate:   "01.01.1990",
-		Gender:      "M",
-		SNILS:       "12345678901",
-		INN:         "123456789012",
-		Email:       "ivanov@example.com",
-		Mobile:      "+79991234567",
-		Trusted:     true,
-		Verified:    true,
-		Citizenship: "RUS",
-		Status:      "REGISTERED",
+	// Получаем номер телефона из токена
+	h.mu.RLock()
+	token, exists := h.tokens[accessToken]
+	h.mu.RUnlock()
+
+	phoneNumber := "+79991234567" // дефолтный номер
+	if exists && token.PhoneNumber != "" {
+		phoneNumber = token.PhoneNumber
 	}
 
-	logger.Info("GetPerson response", zap.String("oid", userInfo.OID))
+	// Получаем или создаем уникальные моковые данные для этого телефона
+	userData := h.userCache.GetOrCreate(phoneNumber)
+
+	userInfo := UserInfo{
+		OID:         oid, // Используем OID из URL, но данные берем из кеша
+		FirstName:   userData.FirstName,
+		LastName:    userData.LastName,
+		MiddleName:  userData.MiddleName,
+		BirthDate:   userData.BirthDate,
+		Gender:      userData.Gender,
+		SNILS:       userData.SNILS,
+		INN:         userData.INN,
+		Email:       userData.Email,
+		Mobile:      userData.Mobile,
+		Trusted:     userData.Trusted,
+		Verified:    userData.Verified,
+		Citizenship: userData.Citizenship,
+		Status:      userData.Status,
+	}
+
+	logger.Info("GetPerson response",
+		zap.String("oid", userInfo.OID),
+		zap.String("phone", phoneNumber))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(userInfo)
