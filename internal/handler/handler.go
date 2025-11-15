@@ -482,6 +482,8 @@ func (h *Handler) UserInfo(w http.ResponseWriter, r *http.Request) {
 	// Получаем или создаем уникальные моковые данные для этого телефона
 	userData := h.userCache.GetOrCreate(phoneNumber)
 
+	logger.Info("UserInfo data", zap.Any("userData", userData))
+
 	// Возвращаем мок данные пользователя
 	userInfo := UserInfo{
 		OID:         userData.OID,
