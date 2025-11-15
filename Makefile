@@ -17,4 +17,4 @@ run: deps run-app
 
 run-app:
 	@echo 'run backend'
-	go run $(BUILD_DIR)/main.go
+	go run $(BUILD_DIR)/app/main.go
